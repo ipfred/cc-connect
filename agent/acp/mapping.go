@@ -118,6 +118,7 @@ func mapToolCall(sessionID string, update json.RawMessage) []core.Event {
 	var u struct {
 		ToolCallID string          `json:"toolCallId"`
 		Title      string          `json:"title"`
+		Name       string          `json:"name"`
 		Kind       string          `json:"kind"`
 		Status     string          `json:"status"`
 		RawInput   json.RawMessage `json:"rawInput"`
@@ -125,7 +126,12 @@ func mapToolCall(sessionID string, update json.RawMessage) []core.Event {
 	if err := json.Unmarshal(update, &u); err != nil {
 		return nil
 	}
-	toolName := u.Title
+	// "name" is a vendor extension (Droid sends the tool id, e.g. "Execute",
+	// while its title is the full shell command); prefer it when present.
+	toolName := u.Name
+	if toolName == "" {
+		toolName = u.Title
+	}
 	if toolName == "" {
 		toolName = u.Kind
 	}

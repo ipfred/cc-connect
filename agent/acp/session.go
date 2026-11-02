@@ -967,6 +967,12 @@ func summarizeACPToolInput(kind string, raw json.RawMessage) string {
 		}
 		return cmd
 	}
+	// Search / fetch style tools: the primary argument says more than JSON.
+	for _, key := range []string{"pattern", "query", "url", "file_path", "path"} {
+		if v, ok := m[key].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
 	b, _ := json.MarshalIndent(m, "", "  ")
 	return string(b)
 }

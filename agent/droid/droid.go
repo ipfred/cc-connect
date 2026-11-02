@@ -50,8 +50,9 @@ func (a *Agent) GetSessionHistory(_ context.Context, sessionID string, limit int
 
 // New builds a Droid agent from project options. Defaults:
 // cmd "droid", args ["exec", "-o", "acp"], display_name "Droid",
-// mode "normal" (Droid asks before edits and commands). All other ACP
-// options pass through to agent/acp.
+// mode "auto-low" (file edits and low-risk commands run without asking;
+// riskier actions still raise a permission card). All other ACP options
+// pass through to agent/acp.
 func New(opts map[string]any) (core.Agent, error) {
 	sessionsDir := defaultSessionsDir()
 	tracker := newUsageTracker(sessionsDir)
@@ -100,7 +101,7 @@ func applyDroidDefaults(opts map[string]any) map[string]any {
 		opts["display_name"] = "Droid"
 	}
 	if optString(opts, "mode") == "" {
-		opts["mode"] = "normal"
+		opts["mode"] = "auto-low"
 	}
 	return opts
 }

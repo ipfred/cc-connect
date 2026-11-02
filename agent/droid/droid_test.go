@@ -27,8 +27,8 @@ func TestApplyDroidDefaults_FillsUnsetFields(t *testing.T) {
 	if got["display_name"] != "Droid" {
 		t.Errorf("display_name = %v", got["display_name"])
 	}
-	if got["mode"] != "normal" {
-		t.Errorf("mode = %v, want normal", got["mode"])
+	if got["mode"] != "auto-low" {
+		t.Errorf("mode = %v, want auto-low", got["mode"])
 	}
 	if applyDroidDefaults(nil)["cmd"] != "droid" {
 		t.Error("nil opts must get defaults")
@@ -79,8 +79,8 @@ func TestNew_ReturnsDroidWrapper(t *testing.T) {
 	if w.CLIDisplayName() != "Droid" {
 		t.Fatalf("CLIDisplayName = %q", w.CLIDisplayName())
 	}
-	if w.GetMode() != "normal" {
-		t.Fatalf("GetMode = %q, want normal default", w.GetMode())
+	if w.GetMode() != "auto-low" {
+		t.Fatalf("GetMode = %q, want auto-low default", w.GetMode())
 	}
 }
 

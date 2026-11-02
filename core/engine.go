@@ -336,6 +336,7 @@ type DisplayCfg struct {
 	ThinkingMaxLen   int // max runes for thinking preview; 0 = no truncation
 	ToolMaxLen       int // max runes for tool use preview; 0 = no truncation
 	ToolMessages     bool
+	ToolBriefLen     int  // >0: one line per tool call with the first N runes of its input, tool results hidden; 0 = off
 	HistoryMaxLen    *int // max runes for /history entries; nil = default, 0 = no truncation
 	HideAgentFooter  bool // strip model/token footer lines emitted as agent text
 }
@@ -5825,7 +5826,11 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if streamCard != nil && !streamCard.Failed() {
 					toolInput := event.ToolInput
 					var formattedInput string
-					if toolInput == "" {
+					if e.display.ToolBriefLen > 0 {
+						if preview := briefToolPreview(toolInput, e.display.ToolBriefLen); preview != "" {
+							formattedInput = "`" + preview + "`"
+						}
+					} else if toolInput == "" {
 						formattedInput = ""
 					} else if strings.Contains(toolInput, "```") {
 						formattedInput = toolInput
@@ -5889,6 +5894,10 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				// tool_max_len applies uniformly to progress_style=card, matching
 				// the rich-card path. event.ToolInput itself is left untouched.
 				cardToolInput := truncateIf(toolInput, e.display.ToolMaxLen)
+				if e.display.ToolBriefLen > 0 {
+					cardToolInput = briefToolPreview(toolInput, e.display.ToolBriefLen)
+					toolMsg = fmt.Sprintf(e.i18n.T(MsgToolBrief), toolCount, briefToolLine(event.ToolName, toolInput, e.display.ToolBriefLen))
+				}
 				if !cp.AppendEvent(ProgressEntryToolUse, cardToolInput, event.ToolName, toolMsg) {
 					for _, chunk := range SplitMessageCodeFenceAware(toolMsg, maxPlatformMessageLen) {
 						sendWorkspace(p, replyCtx, chunk)
@@ -5897,7 +5906,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			}
 
 		case EventToolResult:
-			if e.display.ToolMessages {
+			if e.display.ToolMessages && (e.display.ToolBriefLen <= 0 || hasRichCard) {
 				result := strings.TrimSpace(event.ToolResult)
 				if result == "" {
 					result = strings.TrimSpace(event.Content)

@@ -195,6 +195,7 @@ const (
 	MsgStarting                  MsgKey = "starting"
 	MsgThinking                  MsgKey = "thinking"
 	MsgTool                      MsgKey = "tool"
+	MsgToolBrief                 MsgKey = "tool_brief"
 	MsgToolResult                MsgKey = "tool_result"
 	MsgToolResultFmtStatus       MsgKey = "tool_result_fmt_status"
 	MsgToolResultFmtExit         MsgKey = "tool_result_fmt_exit"
@@ -718,6 +719,13 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "🔧 **工具 #%d: %s**\n---\n%s",
 		LangJapanese:           "🔧 **ツール #%d: %s**\n---\n%s",
 		LangSpanish:            "🔧 **Herramienta #%d: %s**\n---\n%s",
+	},
+	MsgToolBrief: {
+		LangEnglish:            "🔧 Tool #%d: %s",
+		LangChinese:            "🔧 工具 #%d: %s",
+		LangTraditionalChinese: "🔧 工具 #%d: %s",
+		LangJapanese:           "🔧 ツール #%d: %s",
+		LangSpanish:            "🔧 Herramienta #%d: %s",
 	},
 	MsgToolResult: {
 		LangEnglish:            "📤 **%s**\n---\n%s",

@@ -199,6 +199,7 @@ type DisplayConfig struct {
 	ThinkingMaxLen       *int    `toml:"thinking_max_len"`       // max chars for thinking messages; 0 = no truncation; default 300
 	ToolMaxLen           *int    `toml:"tool_max_len"`           // max chars for tool use messages; 0 = no truncation; default 500
 	ToolMessages         *bool   `toml:"tool_messages"`          // whether tool progress messages are shown; default true
+	ToolBriefLen         *int    `toml:"tool_brief_len"`         // >0: one line per tool call with the first N chars of its input, tool results hidden; default 0 (off)
 	HistoryMaxLen        *int    `toml:"history_max_len"`        // max chars per /history entry; 0 = no truncation; default 1000
 	ShowContextIndicator *bool   `toml:"show_context_indicator"` // whether [ctx: ~N%] suffix is shown; default true
 	ReplyFooter          *bool   `toml:"reply_footer"`           // whether Codex-like footer is shown; default true
@@ -997,6 +998,17 @@ func EffectiveDisplay(cfg *Config, proj *ProjectConfig) (mode string, thinkingMe
 // EffectiveHistoryMaxLen returns the per-entry /history truncation length.
 // Resolution: project [display] > global [display] > default 1000. A value
 // of 0 disables truncation.
+// EffectiveToolBriefLen returns tool_brief_len (project > global > 0).
+func EffectiveToolBriefLen(cfg *Config, proj *ProjectConfig) int {
+	if proj != nil && proj.Display != nil && proj.Display.ToolBriefLen != nil {
+		return *proj.Display.ToolBriefLen
+	}
+	if cfg != nil && cfg.Display.ToolBriefLen != nil {
+		return *cfg.Display.ToolBriefLen
+	}
+	return 0
+}
+
 func EffectiveHistoryMaxLen(cfg *Config, proj *ProjectConfig) int {
 	if proj != nil && proj.Display != nil && proj.Display.HistoryMaxLen != nil {
 		return *proj.Display.HistoryMaxLen

@@ -138,6 +138,10 @@ level = "info" # debug, info, warn, error
 # tool_max_len = 500        # Max chars for tool use messages (default: 500) / 工具调用消息最大字符数（默认 500）
 # history_max_len = 1000    # Max chars per /history entry (default: 1000; 0 = no truncation) / 每条历史记录最大字符数（默认 1000；0 表示不截断）
 # tool_messages = true      # Show/hide tool progress messages (default: true) / 是否显示工具进度消息（默认 true）
+# tool_brief_len = 0        # >0: one line per tool call ("🔧 Tool #N: Name `first N chars…`"), tool results hidden.
+#                           # Pair with Feishu progress_style = "compact" to merge them into one message updated in place.
+#                           # >0 时每个工具调用只显示一行（含序号和输入的前 N 个字符），不显示工具结果；
+#                           # 配合飞书 progress_style = "compact" 可合并为一条原地更新的消息（默认 0 关闭）
 # show_context_indicator = true  # Show "[ctx: ~N%]" suffix on assistant replies (default: true)
 #                                # 在助手回复末尾显示「[ctx: ~N%]」上下文占用提示（默认 true 显示）
 # reply_footer = true            # Show Codex-like footer on assistant replies (default: true)
@@ -2091,10 +2095,12 @@ app_secret = "your-feishu-app-secret"
 # # Optional: absolute path when running under launchd / systemd.
 # # cmd = "/Users/me/.local/bin/droid"
 # #
-# # Optional: initial autonomy mode (default "normal" = ask before edits).
-# # Valid ids: normal, spec, auto-low, auto-medium, auto-high.
-# # 可选：初始自主级别（默认 normal，编辑/命令前询问）。
-# # mode = "normal"
+# # Optional: initial autonomy level (default "auto-low"). Switch at runtime
+# # with /mode. Valid ids: normal (ask before edits), spec, auto-low,
+# # auto-medium, auto-high.
+# # 可选：初始自主级别（默认 auto-low），运行中可用 /mode 切换。
+# # 合法值：normal（编辑前询问）/ spec / auto-low / auto-medium / auto-high
+# # mode = "auto-low"
 # #
 # # Optional: initial model / reasoning effort (also settable with /model and
 # # /reasoning). Values come from Droid's model list.

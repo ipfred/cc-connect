@@ -231,6 +231,10 @@ type compactProgressWriter struct {
 	lastSent   string
 	maxEntries int
 
+	// lastLineTool is true when the previous compact entry was a single-line
+	// tool call, so the next one can follow on the next line.
+	lastLineTool bool
+
 	// Throttle message edits to avoid platform rate limits (e.g. Discord ~5 edits/5s).
 	minUpdateInterval time.Duration
 	lastUpdateAt      time.Time
@@ -440,11 +444,17 @@ func (w *compactProgressWriter) AppendStructured(item ProgressCardEntry, fallbac
 			w.content = trimCompactProgressText(w.content, compactProgressMaxChars)
 		}
 	default:
-		if w.content == "" {
+		lineTool := item.Kind == ProgressEntryToolUse && !strings.Contains(fallback, "\n")
+		switch {
+		case w.content == "":
 			w.content = fallback
-		} else {
+		case lineTool && w.lastLineTool:
+			// Consecutive one-line tool calls stay in a tight list.
+			w.content += "\n" + fallback
+		default:
 			w.content += "\n\n" + fallback
 		}
+		w.lastLineTool = lineTool
 		w.content = trimCompactProgressText(w.content, compactProgressMaxChars)
 	}
 

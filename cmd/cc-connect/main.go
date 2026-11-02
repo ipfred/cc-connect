@@ -560,6 +560,7 @@ func main() {
 				ThinkingMaxLen:   tmlen,
 				ToolMaxLen:       toollen,
 				ToolMessages:     tool,
+				ToolBriefLen:     config.EffectiveToolBriefLen(cfg, &proj),
 				HistoryMaxLen:    &historyMaxLen,
 				HideAgentFooter:  hideAgentFooter,
 			})
@@ -1822,6 +1823,7 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 		ThinkingMaxLen:   tmlen,
 		ToolMaxLen:       toollen,
 		ToolMessages:     tool,
+		ToolBriefLen:     config.EffectiveToolBriefLen(cfg, proj),
 		HistoryMaxLen:    &historyMaxLen,
 		HideAgentFooter:  hideAgentFooter,
 	})
