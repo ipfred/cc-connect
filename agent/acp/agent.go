@@ -46,9 +46,19 @@ type Agent struct {
 	// handshake so that future PermissionModes() calls can reflect the
 	// actual modes this specific ACP agent offers (rather than a
 	// hard-coded fallback that may not match).
-	modesMu       sync.RWMutex
-	modesCache    []core.PermissionModeInfo
-	modesCurrent  string
+	modesMu      sync.RWMutex
+	modesCache   []core.PermissionModeInfo
+	modesCurrent string
+
+	// configCache holds the latest configOptions observed on any session;
+	// pendingModel / pendingEffort are the user's selections, applied to
+	// sessions via session/set_config_option.
+	configMu      sync.RWMutex
+	configCache   []acpConfigOption
+	pendingModel  string
+	pendingEffort string
+
+	hooks Hooks
 
 	mu sync.RWMutex
 }
@@ -68,8 +78,17 @@ var _ sessionCallbacks = (*Agent)(nil)
 // New builds an acp agent from project options.
 // Required: options["command"] — executable name or path for the ACP agent.
 // Optional: options["args"], options["env"], options["auth_method"],
-// options["display_name"], options["mode"].
+// options["display_name"], options["mode"], options["model"],
+// options["reasoning_effort"].
 func New(opts map[string]any) (core.Agent, error) {
+	a, err := newAgent(opts)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func newAgent(opts map[string]any) (*Agent, error) {
 	workDir, _ := opts["work_dir"].(string)
 	if workDir == "" {
 		workDir = "."
@@ -94,17 +113,22 @@ func New(opts map[string]any) (core.Agent, error) {
 	}
 	mode, _ := opts["mode"].(string)
 	mode = strings.TrimSpace(mode)
+	model, _ := opts["model"].(string)
+	effort, _ := opts["reasoning_effort"].(string)
 
 	return &Agent{
-		workDir:     workDir,
+		workDir:      workDir,
 		cmd:          cmdStr,
 		cliExtraArgs: cliExtraArgs,
-		args:        args,
-		staticEnv:   staticEnv,
-		extraEnv:    extra,
-		authMethod:  authMethod,
-		displayName: displayName,
-		mode:        mode,
+		args:         args,
+		staticEnv:    staticEnv,
+		extraEnv:     extra,
+		authMethod:   authMethod,
+		displayName:  displayName,
+		mode:         mode,
+
+		pendingModel:  strings.TrimSpace(model),
+		pendingEffort: strings.TrimSpace(effort),
 	}, nil
 }
 
@@ -214,6 +238,13 @@ func (a *Agent) WorkspaceAgentOptions() map[string]any {
 	if a.displayName != "" {
 		opts["display_name"] = a.displayName
 	}
+	model, effort := a.desiredConfigValues()
+	if model != "" {
+		opts["model"] = model
+	}
+	if effort != "" {
+		opts["reasoning_effort"] = effort
+	}
 	return opts
 }
 
@@ -232,6 +263,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	pendingMode := a.mode
 	extra := append([]string(nil), a.extraEnv...)
 	extra = append(extra, a.sessionEnv...)
+	hooks := a.hooks
 	a.mu.RUnlock()
 
 	return newACPSession(ctx, acpSessionConfig{
@@ -243,6 +275,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 		authMethod:      authMethod,
 		initialMode:     pendingMode,
 		callbacks:       a,
+		hooks:           hooks,
 	})
 }
 

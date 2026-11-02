@@ -38,8 +38,9 @@ type acpSession struct {
 
 	sendMu sync.Mutex
 
-	permMu   sync.Mutex
-	permByID map[string]permState
+	permMu     sync.Mutex
+	permByID   map[string]permState
+	elicitByID map[string]elicitationState // guarded by permMu
 
 	toolInputMu   sync.Mutex
 	toolInputByID map[string]string // toolCallId -> summarized tool input
@@ -56,6 +57,12 @@ type acpSession struct {
 	haveUsage      bool
 	availableModes []acpModeInfo
 	currentMode    string
+
+	configMu       sync.RWMutex
+	configOptions  []acpConfigOption
+	configRejected map[string]bool // config "id=value" pairs already warned about
+
+	hooks Hooks
 
 	// promptInFlight tracks active session/prompt RPCs. Text chunks that
 	// arrive while no prompt is in flight belong to background work (kimi
@@ -86,6 +93,7 @@ type acpSessionConfig struct {
 	authMethod      string
 	initialMode     string           // if non-empty, applied via session/set_mode after session/new
 	callbacks       sessionCallbacks // may be nil
+	hooks           Hooks
 }
 
 func newACPSession(ctx context.Context, cfg acpSessionConfig) (*acpSession, error) {
@@ -101,9 +109,11 @@ func newACPSession(ctx context.Context, cfg acpSessionConfig) (*acpSession, erro
 		ctx:           sessionCtx,
 		cancel:        cancel,
 		permByID:      make(map[string]permState),
+		elicitByID:    make(map[string]elicitationState),
 		toolInputByID: make(map[string]string),
 		acpSessID:     cfg.resumeSessionID,
 		callbacks:     cfg.callbacks,
+		hooks:         cfg.hooks,
 	}
 	s.alive.Store(true)
 
@@ -167,6 +177,7 @@ func newACPSession(ctx context.Context, cfg acpSessionConfig) (*acpSession, erro
 			)
 		}
 	}
+	s.applyDesiredConfig()
 
 	return s, nil
 }
@@ -183,6 +194,11 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 				"writeTextFile": false,
 			},
 			"terminal": false,
+			// Lets agents ask structured questions (e.g. Droid's AskUser)
+			// via elicitation/create; answered through AskUserQuestion cards.
+			"elicitation": map[string]any{
+				"form": map[string]any{},
+			},
 		},
 		"clientInfo": map[string]any{
 			"name":    "cc-connect",
@@ -255,8 +271,9 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 					"method", resumeMethod, "error", err)
 			} else {
 				var rr struct {
-					SessionID string         `json:"sessionId"`
-					Modes     *acpModesBlock `json:"modes"`
+					SessionID     string            `json:"sessionId"`
+					Modes         *acpModesBlock    `json:"modes"`
+					ConfigOptions []acpConfigOption `json:"configOptions"`
 				}
 				if uerr := json.Unmarshal(resumeRes, &rr); uerr != nil {
 					// The body is allowed to be a configOptions-only
@@ -279,6 +296,7 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 				}
 				s.setACPSessionID(resumedID)
 				s.absorbModes(rr.Modes)
+				s.absorbConfigOptions(rr.ConfigOptions)
 				return nil
 			}
 		}
@@ -293,8 +311,9 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 		return fmt.Errorf("acp: session/new: %w", err)
 	}
 	var sn struct {
-		SessionID string         `json:"sessionId"`
-		Modes     *acpModesBlock `json:"modes"`
+		SessionID     string            `json:"sessionId"`
+		Modes         *acpModesBlock    `json:"modes"`
+		ConfigOptions []acpConfigOption `json:"configOptions"`
 	}
 	if err := json.Unmarshal(newRes, &sn); err != nil {
 		return fmt.Errorf("acp: parse session/new: %w", err)
@@ -304,6 +323,7 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 	}
 	s.setACPSessionID(sn.SessionID)
 	s.absorbModes(sn.Modes)
+	s.absorbConfigOptions(sn.ConfigOptions)
 	return nil
 }
 
@@ -431,6 +451,7 @@ func (s *acpSession) onNotification(method string, params json.RawMessage) {
 	toolName := s.resolveToolCallName(params)
 	s.maybeAbsorbCurrentModeUpdate(params)
 	s.maybeAbsorbUsageUpdate(params)
+	s.maybeAbsorbConfigOptionUpdate(params)
 	sid := s.currentACPSessionID()
 	// Debug log to capture raw session/update JSON for troubleshooting vendor compatibility
 	slog.Debug("acp: session/update", "session_id", sid, "params", string(params))
@@ -601,6 +622,8 @@ func (s *acpSession) onServerRequest(method string, id json.RawMessage, params j
 	switch method {
 	case "session/request_permission":
 		s.handlePermissionRequest(id, params)
+	case "elicitation/create":
+		s.handleElicitation(id, params)
 	case "cursor/ask_question", "cursor/create_plan", "cursor/update_todos", "cursor/task", "cursor/generate_image":
 		// Cursor CLI extensions — acknowledge so tool flows do not block; IM UX is limited for these.
 		slog.Debug("acp: cursor extension request (no-op ack)", "method", method)
@@ -721,6 +744,7 @@ func (s *acpSession) Send(prompt string, messageID string, images []core.ImageAt
 	if sid == "" {
 		return fmt.Errorf("acp: no agent session id")
 	}
+	s.applyDesiredConfig()
 
 	promptBlocks := []any{
 		map[string]any{"type": "text", "text": prompt},
@@ -731,6 +755,9 @@ func (s *acpSession) Send(prompt string, messageID string, images []core.ImageAt
 	}
 
 	slog.Debug("acp: sending session/prompt", "session_id", sid, "prompt_len", len(prompt))
+	if s.hooks.BeforePrompt != nil {
+		s.hooks.BeforePrompt(sid)
+	}
 	s.promptInFlight.Add(1)
 	res, err := s.tr.call(s.ctx, "session/prompt", params)
 	if err != nil {
@@ -740,25 +767,12 @@ func (s *acpSession) Send(prompt string, messageID string, images []core.ImageAt
 	}
 	slog.Debug("acp: session/prompt response", "session_id", sid, "response_len", len(res), "response", string(res))
 
-	// Absorb per-turn usage (esp. cachedReadTokens) into the context snapshot.
-	var pr struct {
-		Usage struct {
-			InputTokens      int `json:"inputTokens"`
-			OutputTokens     int `json:"outputTokens"`
-			TotalTokens      int `json:"totalTokens"`
-			CachedReadTokens int `json:"cachedReadTokens"`
-		} `json:"usage"`
+	usage, haveTurnUsage := parsePromptUsage(res)
+	if !haveTurnUsage && s.hooks.TurnUsage != nil {
+		usage, haveTurnUsage = s.hooks.TurnUsage(sid)
 	}
-	if json.Unmarshal(res, &pr) == nil && (pr.Usage.InputTokens > 0 || pr.Usage.TotalTokens > 0) {
-		s.usageMu.Lock()
-		if pr.Usage.CachedReadTokens > 0 {
-			s.lastUsage.CachedInputTokens = pr.Usage.CachedReadTokens
-		}
-		s.lastUsage.InputTokens = pr.Usage.InputTokens
-		s.lastUsage.OutputTokens = pr.Usage.OutputTokens
-		s.lastUsage.TotalTokens = pr.Usage.TotalTokens
-		s.haveUsage = true
-		s.usageMu.Unlock()
+	if haveTurnUsage {
+		s.recordTurnUsage(usage)
 	}
 
 	// Text was streamed via session/update; engine aggregates EventText.
@@ -766,12 +780,33 @@ func (s *acpSession) Send(prompt string, messageID string, images []core.ImageAt
 	// chunk racing in from the read loop is not mistaken for out-of-turn
 	// background output.
 	s.emit(core.Event{
-		Type:      core.EventResult,
-		SessionID: sid,
-		Done:      true,
+		Type:                     core.EventResult,
+		SessionID:                sid,
+		Done:                     true,
+		InputTokens:              usage.InputTokens,
+		OutputTokens:             usage.OutputTokens,
+		CacheReadInputTokens:     usage.CacheReadTokens,
+		CacheCreationInputTokens: usage.CacheWriteTokens,
 	})
 	s.promptInFlight.Add(-1)
 	return nil
+}
+
+// recordTurnUsage folds one turn's token counts into the context snapshot
+// served by GetContextUsage (reply footer, auto-compress).
+func (s *acpSession) recordTurnUsage(u TurnUsage) {
+	s.usageMu.Lock()
+	defer s.usageMu.Unlock()
+	s.lastUsage.InputTokens = u.InputTokens
+	s.lastUsage.OutputTokens = u.OutputTokens
+	s.lastUsage.CachedInputTokens = u.CacheReadTokens
+	s.lastUsage.CacheCreationInputTokens = u.CacheWriteTokens
+	total := u.TotalTokens
+	if total == 0 {
+		total = u.InputTokens + u.OutputTokens + u.CacheReadTokens + u.CacheWriteTokens
+	}
+	s.lastUsage.TotalTokens = total
+	s.haveUsage = true
 }
 
 func (s *acpSession) appendImageRefs(prompt string, images []core.ImageAttachment) string {
@@ -813,6 +848,12 @@ func (s *acpSession) appendImageRefs(prompt string, images []core.ImageAttachmen
 func (s *acpSession) RespondPermission(requestID string, result core.PermissionResult) error {
 	if !s.alive.Load() {
 		return fmt.Errorf("acp: session closed")
+	}
+
+	if est, ok := s.takeElicitation(requestID); ok {
+		res := buildElicitationResponse(est.fields, result)
+		slog.Debug("acp: elicitation response", "request_id", requestID, "action", res["action"])
+		return s.tr.respondSuccess(est.rpcID, res)
 	}
 
 	s.permMu.Lock()
@@ -858,6 +899,7 @@ func (s *acpSession) CancelTurn() error {
 		return fmt.Errorf("acp: transport not available")
 	}
 	slog.Debug("acp: cancelling current turn", "session_id", sid)
+	s.cancelPendingElicitations()
 	return s.tr.sendNotification("session/cancel", map[string]any{
 		"sessionId": sid,
 	})
@@ -869,6 +911,9 @@ func (s *acpSession) Alive() bool {
 
 func (s *acpSession) Close() error {
 	s.alive.Store(false)
+	if s.tr != nil {
+		s.cancelPendingElicitations()
+	}
 	s.cancel()
 	if s.cmd != nil && s.cmd.Process != nil {
 		_ = s.cmd.Process.Kill()

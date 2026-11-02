@@ -2065,6 +2065,53 @@ app_secret = "your-feishu-app-secret"
 # token = "your-telegram-bot-token"
 
 # =============================================================================
+# Project: Factory Droid (https://factory.ai) / 使用 Factory Droid
+# =============================================================================
+# Droid speaks ACP over stdio via `droid exec -o acp`. The first-class
+# `type = "droid"` agent pins cmd / args / display name, answers Droid's
+# AskUser questions with question cards (ACP elicitation), exposes /model and
+# /reasoning from Droid's configOptions, reads /history from
+# ~/.factory/sessions, and reports per-turn token usage in the reply footer.
+# Droid 通过 `droid exec -o acp` 使用 ACP 协议。内置 `type = "droid"`：无需指定
+# cmd/args；支持 AskUser 提问卡片、/model、/reasoning、/history 和 footer token 统计。
+#
+# Prerequisites / 前置条件:
+#   1. Install the Droid CLI and log in once (`droid`), or set FACTORY_API_KEY
+#      via the env option below.
+#      安装 Droid CLI 并登录一次，或通过下面的 env 注入 FACTORY_API_KEY。
+
+# [[projects]]
+# name = "my-droid-project"
+#
+# [projects.agent]
+# type = "droid"
+#
+# [projects.agent.options]
+# work_dir = "/path/to/your/code"
+# # Optional: absolute path when running under launchd / systemd.
+# # cmd = "/Users/me/.local/bin/droid"
+# #
+# # Optional: initial autonomy mode (default "normal" = ask before edits).
+# # Valid ids: normal, spec, auto-low, auto-medium, auto-high.
+# # 可选：初始自主级别（默认 normal，编辑/命令前询问）。
+# # mode = "normal"
+# #
+# # Optional: initial model / reasoning effort (also settable with /model and
+# # /reasoning). Values come from Droid's model list.
+# # 可选：初始模型 / 推理强度（也可用 /model、/reasoning 切换）。
+# # model = "claude-sonnet-5-5"
+# # reasoning_effort = "high"
+# #
+# # [projects.agent.options.env]
+# # FACTORY_API_KEY = "fk-xxx"
+
+# [[projects.platforms]]
+# type = "feishu"
+#
+# [projects.platforms.options]
+# app_id = "cli_xxx"
+# app_secret = "xxx"
+# =============================================================================
 # Project: ACP (Agent Client Protocol) agent / 使用 ACP 子进程
 # =============================================================================
 # Runs any binary that speaks ACP over stdio (newline-delimited JSON-RPC 2.0).

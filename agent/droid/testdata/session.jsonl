@@ -1,0 +1,13 @@
+{"type":"session_start","id":"11111111-2222-4333-8444-555555555555","title":"Fix the login bug","owner":"tester","version":2,"cwd":"/tmp/project"}
+{"type":"message","id":"aaaa0001","timestamp":"2026-11-02T13:40:30.000Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>\nUnified tool catalog:\nWebSearch\n</system-reminder>"}],"visibility":"llm_only"},"seq":1}
+{"type":"message","id":"context-aaaa0002","parentId":"aaaa0001","timestamp":"2026-11-02T13:40:31.000Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>files changed</system-reminder>"}]},"seq":2}
+{"type":"message","id":"aaaa0003","parentId":"context-aaaa0002","timestamp":"2026-11-02T13:40:32.504Z","message":{"role":"user","content":[{"type":"text","text":"Fix the login bug please"}],"userMessageSource":"desktop"},"seq":3}
+{"type":"message","id":"aaaa0004","parentId":"aaaa0003","timestamp":"2026-11-02T13:40:40.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"internal reasoning","signature":"sig"},{"type":"text","text":"Let me look at the code."},{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/tmp/project/login.go"}}]},"seq":4}
+{"type":"message","id":"aaaa0005","parentId":"aaaa0004","timestamp":"2026-11-02T13:40:41.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"package main"}]},"seq":5}
+{"type":"message","id":"aaaa0006","parentId":"aaaa0005","timestamp":"2026-11-02T13:40:42.000Z","message":{"role":"user","content":[]},"seq":6}
+{"type":"message","id":"todo-stale-aaaa0007","parentId":"aaaa0006","timestamp":"2026-11-02T13:40:43.000Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>REMINDER: update todos</system-reminder>"}],"visibility":"llm_only"},"seq":7}
+{"type":"message","id":"aaaa0008","parentId":"aaaa0006","timestamp":"2026-11-02T13:40:50.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Fixed: the session cookie was not refreshed."}]},"seq":8}
+{"type":"agent_turn_outcome","turnId":"t1","reason":"completed","resultKind":"text"}
+{"type":"todo_state","todos":"1. [completed] fix"}
+{"type":"message","id":"aaaa0009","parentId":"aaaa0008","timestamp":"2026-11-02T13:41:00.000Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>Current date: 2026-11-02.</system-reminder>"},{"type":"text","text":"Thanks, add a test"}]},"seq":9}
+{"type":"message","id":"aaaa0010","parentId":"aaaa0009","timestamp":"2026-11-02T13:41:10.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Test added."}]},"seq":10}
