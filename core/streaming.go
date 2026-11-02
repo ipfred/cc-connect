@@ -243,7 +243,9 @@ func (sp *streamPreview) flushLocked(text string) {
 	if sp.transform != nil {
 		text = sp.transform(text)
 	}
-	if text == sp.lastSentText || text == "" {
+	// Whitespace-only text (agents often stream "\n\n" between tool calls)
+	// would surface as an empty chat bubble.
+	if text == sp.lastSentText || strings.TrimSpace(text) == "" {
 		return
 	}
 

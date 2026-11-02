@@ -5724,7 +5724,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						sp.detachPreview()
 					} else {
 						segment := strings.Join(textParts[segmentStart:], "")
-						if segment != "" {
+						if strings.TrimSpace(segment) != "" {
 							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
@@ -5747,7 +5747,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if len(textParts) > segmentStart {
 					if !previewActive {
 						segment := strings.Join(textParts[segmentStart:], "")
-						if segment != "" {
+						if strings.TrimSpace(segment) != "" {
 							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
@@ -5811,7 +5811,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						sp.detachPreview()
 					} else {
 						segment := strings.Join(textParts[segmentStart:], "")
-						if segment != "" {
+						if strings.TrimSpace(segment) != "" {
 							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
@@ -5859,7 +5859,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if len(textParts) > segmentStart {
 					if !previewActive {
 						segment := strings.Join(textParts[segmentStart:], "")
-						if segment != "" {
+						if strings.TrimSpace(segment) != "" {
 							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
@@ -6118,7 +6118,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			if len(textParts) > segmentStart {
 				if !previewActive {
 					segment := strings.Join(textParts[segmentStart:], "")
-					if segment != "" {
+					if strings.TrimSpace(segment) != "" {
 						for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 							sendWorkspace(p, replyCtx, chunk)
 						}
