@@ -57,6 +57,7 @@ Optional capability interfaces (implement only when needed):
 - `CardSender` — rich card messages
 - `InlineButtonSender` — inline keyboard buttons
 - `ProviderSwitcher` — multi-model switching
+- `ConfiguredWorkspaceProvider` — selectable project directories supplied by an agent's config
 - `DoctorChecker` — agent-specific health checks
 - `AgentDoctorInfo` — CLI binary metadata for diagnostics
 

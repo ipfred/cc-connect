@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -19,6 +20,15 @@ func (a *namedTestAgent) StartSession(_ context.Context, _ string) (AgentSession
 }
 func (a *namedTestAgent) ListSessions(_ context.Context) ([]AgentSessionInfo, error) { return nil, nil }
 func (a *namedTestAgent) Stop() error                                                { return nil }
+
+type configuredWorkspaceTestAgent struct {
+	namedTestAgent
+	workspaces []ConfiguredWorkspace
+}
+
+func (a *configuredWorkspaceTestAgent) ConfiguredWorkspaces() []ConfiguredWorkspace {
+	return append([]ConfiguredWorkspace(nil), a.workspaces...)
+}
 
 // mockChannelResolver implements both Platform and ChannelNameResolver.
 type mockChannelResolver struct {
@@ -64,6 +74,160 @@ func newTestEngineWithMultiWorkspaceAgent(t *testing.T, baseDir string) *Engine 
 	e := NewEngine("test", &namedTestAgent{name: agentName}, nil, sessionPath, LangEnglish)
 	e.SetMultiWorkspace(baseDir, bindingPath)
 	return e
+}
+
+func TestConfiguredWorkspaceSelectionCardAndBinding(t *testing.T) {
+	root := t.TempDir()
+	apiDir := filepath.Join(root, "api")
+	webDir := filepath.Join(root, "web")
+	for _, dir := range []string{apiDir, webDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const agentName = "configured-workspace-selection-test-agent"
+	RegisterAgent(agentName, func(map[string]any) (Agent, error) {
+		return &namedTestAgent{name: agentName}, nil
+	})
+	a := &configuredWorkspaceTestAgent{
+		namedTestAgent: namedTestAgent{name: agentName},
+		workspaces: []ConfiguredWorkspace{
+			{Name: "API", Path: apiDir},
+			{Name: "Web", Path: webDir},
+		},
+	}
+	p := &stubCardPlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}
+	e := NewEngine("test", a, []Platform{p}, filepath.Join(t.TempDir(), "sessions.json"), LangEnglish)
+	e.SetMultiWorkspace(root, filepath.Join(t.TempDir(), "bindings.json"))
+	t.Cleanup(func() { _ = e.Stop() })
+	msg := &Message{
+		SessionKey: "feishu:oc_chat:user",
+		Platform:   "feishu",
+		UserID:     "user",
+		Content:    "start working",
+		ReplyCtx:   "ctx",
+	}
+
+	// The first message is intercepted by the project picker.
+	e.ReceiveMessage(p, msg)
+	if len(p.repliedCards) != 1 {
+		t.Fatalf("project picker cards = %d, want 1", len(p.repliedCards))
+	}
+	cardText := p.repliedCards[0].RenderText()
+	for _, want := range []string{"API", "Web"} {
+		if !strings.Contains(cardText, want) {
+			t.Errorf("project picker missing %q: %s", want, cardText)
+		}
+	}
+	for _, unwanted := range []string{apiDir, webDir, "1. API", "2. Web"} {
+		if strings.Contains(cardText, unwanted) {
+			t.Errorf("project picker should not repeat %q: %s", unwanted, cardText)
+		}
+	}
+	selects := 0
+	for _, elem := range p.repliedCards[0].Elements {
+		if selectElem, ok := elem.(CardSelect); ok {
+			selects++
+			if len(selectElem.Options) != 2 ||
+				selectElem.Options[0].Text != "API" ||
+				selectElem.Options[1].Text != "Web" ||
+				selectElem.Options[1].Value != "cmd:/workspace select 2" {
+				t.Fatalf("unexpected project options: %+v", selectElem.Options)
+			}
+		}
+	}
+	if selects != 1 {
+		t.Fatalf("project picker select elements = %d, want 1", selects)
+	}
+	if len(p.repliedCards[0].Elements) != 1 {
+		t.Fatalf("project picker should contain only the select, got %#v", p.repliedCards[0].Elements)
+	}
+	if p.repliedCards[0].Header != nil {
+		t.Fatalf("project picker header = %#v, want no header", p.repliedCards[0].Header)
+	}
+
+	// Selecting an entry binds the configured path to the Feishu chat.
+	msg.Content = "/workspace select 2"
+	e.ReceiveMessage(p, msg)
+	binding := e.workspaceBindings.Lookup("project:test", workspaceChannelKey("feishu", "oc_chat"))
+	if binding == nil || binding.Workspace != normalizeWorkspacePath(webDir) {
+		t.Fatalf("binding = %+v, want %s", binding, normalizeWorkspacePath(webDir))
+	}
+	sent := p.getSent()
+	if len(sent) == 0 || !strings.Contains(sent[len(sent)-1], webDir) {
+		t.Fatalf("selection reply = %v, want path %s", sent, webDir)
+	}
+}
+
+func TestConfiguredWorkspaceSelection_RejectsInvalidIndexAndMissingPath(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "missing")
+	const agentName = "configured-workspace-invalid-test-agent"
+	RegisterAgent(agentName, func(map[string]any) (Agent, error) {
+		return &namedTestAgent{name: agentName}, nil
+	})
+	a := &configuredWorkspaceTestAgent{
+		namedTestAgent: namedTestAgent{name: agentName},
+		workspaces:     []ConfiguredWorkspace{{Name: "Missing", Path: missing}},
+	}
+	p := &stubPlatformEngine{n: "feishu"}
+	e := NewEngine("test", a, []Platform{p}, "", LangEnglish)
+	e.SetMultiWorkspace(root, filepath.Join(t.TempDir(), "bindings.json"))
+	t.Cleanup(func() { _ = e.Stop() })
+	msg := &Message{SessionKey: "feishu:oc_chat:user", Platform: "feishu", ReplyCtx: "ctx"}
+
+	msg.Content = "/workspace select 2"
+	e.handleCommand(p, msg, msg.Content)
+	sent := p.getSent()
+	if len(sent) == 0 || !strings.Contains(sent[len(sent)-1], e.i18n.T(MsgWsSelectInvalid)) {
+		t.Fatalf("invalid index reply = %v", sent)
+	}
+
+	p.clearSent()
+	msg.Content = "/workspace select 1"
+	e.handleCommand(p, msg, msg.Content)
+	sent = p.getSent()
+	if len(sent) == 0 || !strings.Contains(sent[len(sent)-1], missing) {
+		t.Fatalf("missing path reply = %v, want path %s", sent, missing)
+	}
+}
+
+func TestConfiguredWorkspaceSelection_SkipsConventionAutoBinding(t *testing.T) {
+	root := t.TempDir()
+	const channelID = "C-CONFIGURED"
+	channelName := "same-name-child"
+	conventionDir := filepath.Join(root, channelName)
+	configuredDir := filepath.Join(root, "configured-project")
+	for _, dir := range []string{conventionDir, configuredDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const agentName = "configured-workspace-convention-test-agent"
+	a := &configuredWorkspaceTestAgent{
+		namedTestAgent: namedTestAgent{name: agentName},
+		workspaces:     []ConfiguredWorkspace{{Name: "Configured", Path: configuredDir}},
+	}
+	p := &mockChannelResolver{name: "feishu", names: map[string]string{channelID: channelName}}
+	e := NewEngine("test", a, []Platform{p}, "", LangEnglish)
+	e.SetMultiWorkspace(root, filepath.Join(t.TempDir(), "bindings.json"))
+	t.Cleanup(func() { _ = e.Stop() })
+
+	workspace, gotName, err := e.resolveWorkspace(p, channelID)
+	if err != nil {
+		t.Fatalf("resolveWorkspace: %v", err)
+	}
+	if workspace != "" {
+		t.Fatalf("workspace = %q, want empty until the user chooses from project_paths", workspace)
+	}
+	if gotName != channelName {
+		t.Fatalf("channel name = %q, want %q", gotName, channelName)
+	}
+	if binding := e.workspaceBindings.Lookup("project:test", workspaceChannelKey("feishu", channelID)); binding != nil {
+		t.Fatalf("configured catalog auto-bound convention directory %s: %+v", conventionDir, binding)
+	}
 }
 
 func TestMultiWorkspaceResolution_ConventionMatch(t *testing.T) {

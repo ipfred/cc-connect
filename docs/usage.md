@@ -1004,6 +1004,7 @@ type = "claudecode"
 ```
 /workspace                    Show current binding
 /workspace bind <name>        Bind local folder
+/workspace select <number>    Pick an agent-configured project path
 /workspace init <git-url>     Clone and bind repo
 /workspace unbind             Remove binding
 /workspace list               List all bindings

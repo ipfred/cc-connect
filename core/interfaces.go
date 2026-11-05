@@ -595,6 +595,22 @@ type SessionTitleProvider interface {
 	GetSessionTitle(sessionID string) string
 }
 
+// ConfiguredWorkspace is a selectable project directory supplied by an agent
+// from its own configuration. The engine owns the channel binding and starts a
+// per-workspace agent instance from Path.
+type ConfiguredWorkspace struct {
+	Name string
+	Path string
+}
+
+// ConfiguredWorkspaceProvider is an optional interface for agents that expose
+// multiple project directories in config. When a channel has no workspace
+// binding, the engine offers these directories as a selection before starting
+// the first conversation.
+type ConfiguredWorkspaceProvider interface {
+	ConfiguredWorkspaces() []ConfiguredWorkspace
+}
+
 // WorkDirSwitcher is an optional interface for agents that support runtime
 // work directory switching. The change takes effect on the next session start;
 // the current running session is terminated automatically by the engine.

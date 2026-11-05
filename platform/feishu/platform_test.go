@@ -2249,6 +2249,58 @@ func TestCmdAction_WithoutAfterClick_DispatchesAndReturnsNil(t *testing.T) {
 	}
 }
 
+func TestCardSelectAction_DispatchesWorkspaceSelection(t *testing.T) {
+	platformAny, err := New(map[string]any{
+		"app_id":             "cli_xxx",
+		"app_secret":         "secret",
+		"enable_feishu_card": true,
+		"thread_isolation":   true,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ip, ok := platformAny.(*interactivePlatform)
+	if !ok {
+		t.Fatalf("platform type = %T, want *interactivePlatform", platformAny)
+	}
+
+	const sessionKey = "feishu:oc_chat1:root:om_root"
+	msgCh := make(chan *core.Message, 1)
+	ip.handler = func(_ core.Platform, msg *core.Message) { msgCh <- msg }
+
+	resp, err := ip.onCardAction(&callback.CardActionTriggerEvent{
+		Event: &callback.CardActionTriggerRequest{
+			Operator: &callback.Operator{OpenID: "ou_user1"},
+			Action: &callback.CallBackAction{
+				Option: "cmd:/workspace select 2",
+				Value:  map[string]any{"session_key": sessionKey},
+			},
+			Context: &callback.Context{OpenChatID: "oc_chat1", OpenMessageID: "om_msg1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("onCardAction() error = %v", err)
+	}
+	if resp != nil {
+		t.Fatalf("expected nil card response, got %#v", resp)
+	}
+
+	select {
+	case msg := <-msgCh:
+		if msg.Content != "/workspace select 2" {
+			t.Fatalf("dispatched content = %q, want /workspace select 2", msg.Content)
+		}
+		if msg.SessionKey != sessionKey {
+			t.Fatalf("session key = %q, want %q", msg.SessionKey, sessionKey)
+		}
+		if msg.ChannelKey != "oc_chat1:topic:om_root" {
+			t.Fatalf("channel key = %q, want oc_chat1:topic:om_root", msg.ChannelKey)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected workspace selection command to be dispatched")
+	}
+}
+
 func TestCmdAction_WithAfterClick_DispatchesAndReturnsCard(t *testing.T) {
 	platformAny, err := New(map[string]any{"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true})
 	if err != nil {

@@ -2092,6 +2092,19 @@ app_secret = "your-feishu-app-secret"
 #
 # [projects.agent.options]
 # work_dir = "/path/to/your/code"
+# # Optional: let the user choose a project directory at conversation start.
+# # Feishu renders this as a select card; other platforms get numbered
+# # `/workspace select <n>` commands. Paths may be absolute, ~/..., or
+# # relative to work_dir. Setting project_paths enables per-workspace agents
+# # automatically, so mode = "multi-workspace" is not required here.
+# # 可选：对话开始时让用户选择项目目录。飞书显示为下拉选择卡片，其他平台
+# # 使用编号命令 `/workspace select <n>`。路径支持绝对路径、~/... 或相对
+# # work_dir 的路径。设置 project_paths 后会自动启用按工作区隔离的 Agent，
+# # 无需再设置 mode = "multi-workspace"。
+# # project_paths = [
+# #   { name = "API", path = "/Users/me/code/api" },
+# #   { name = "Web", path = "~/code/web" },
+# # ]
 # # Optional: absolute path when running under launchd / systemd.
 # # cmd = "/Users/me/.local/bin/droid"
 # #

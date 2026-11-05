@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chenhg5/cc-connect/agent/acp"
+	"github.com/chenhg5/cc-connect/core"
 )
 
 const fixtureSessionID = "11111111-2222-4333-8444-555555555555"
@@ -81,6 +82,87 @@ func TestNew_ReturnsDroidWrapper(t *testing.T) {
 	}
 	if w.GetMode() != "auto-low" {
 		t.Fatalf("GetMode = %q, want auto-low default", w.GetMode())
+	}
+}
+
+func TestNew_ParsesConfiguredProjectPaths(t *testing.T) {
+	if _, err := exec.LookPath("true"); err != nil {
+		t.Skip("'true' not in PATH")
+	}
+	root := t.TempDir()
+	apiDir := filepath.Join(root, "api")
+	webDir := filepath.Join(root, "web")
+	for _, dir := range []string{apiDir, webDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a, err := New(map[string]any{
+		"cmd":      "true",
+		"work_dir": root,
+		"project_paths": []any{
+			apiDir,
+			map[string]any{"name": "Web", "path": webDir},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	provider, ok := a.(core.ConfiguredWorkspaceProvider)
+	if !ok {
+		t.Fatal("Droid must implement ConfiguredWorkspaceProvider")
+	}
+	got := provider.ConfiguredWorkspaces()
+	if len(got) != 2 {
+		t.Fatalf("ConfiguredWorkspaces() = %+v, want 2 entries", got)
+	}
+	if got[0].Name != "api" || got[0].Path != apiDir {
+		t.Errorf("entry 0 = %+v, want name=api path=%s", got[0], apiDir)
+	}
+	if got[1].Name != "Web" || got[1].Path != webDir {
+		t.Errorf("entry 1 = %+v, want name=Web path=%s", got[1], webDir)
+	}
+}
+
+func TestParseConfiguredWorkspaces_RelativeAndDuplicatePaths(t *testing.T) {
+	workDir := t.TempDir()
+	got, err := parseConfiguredWorkspaces([]any{
+		"api",
+		map[string]any{"name": "API again", "path": "./api/"},
+		map[string]any{"name": "web", "dir": "web"},
+	}, workDir)
+	if err != nil {
+		t.Fatalf("parseConfiguredWorkspaces: %v", err)
+	}
+	wantAPI := filepath.Join(workDir, "api")
+	wantWeb := filepath.Join(workDir, "web")
+	if len(got) != 2 {
+		t.Fatalf("got %+v, want duplicate path removed", got)
+	}
+	if got[0].Path != wantAPI || got[0].Name != "api" {
+		t.Errorf("entry 0 = %+v, want api at %s", got[0], wantAPI)
+	}
+	if got[1].Path != wantWeb || got[1].Name != "web" {
+		t.Errorf("entry 1 = %+v, want web at %s", got[1], wantWeb)
+	}
+}
+
+func TestParseConfiguredWorkspaces_RejectsMalformedEntries(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  any
+	}{
+		{name: "wrong root type", raw: 42},
+		{name: "wrong entry type", raw: []any{42}},
+		{name: "missing table path", raw: []any{map[string]any{"name": "API"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := parseConfiguredWorkspaces(tt.raw, ""); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
 	}
 }
 

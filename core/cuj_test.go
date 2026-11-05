@@ -2746,6 +2746,108 @@ func TestCUJ_H5_WorkspaceSkillDiscoveryAndInvocation(t *testing.T) {
 	assertWorkspaceSkills(t, sent[len(sent)-1], "b", "a")
 }
 
+type cujConfiguredWorkspaceAgent struct {
+	*cujAgent
+	name       string
+	workspaces []ConfiguredWorkspace
+}
+
+func (a *cujConfiguredWorkspaceAgent) Name() string { return a.name }
+
+func (a *cujConfiguredWorkspaceAgent) ConfiguredWorkspaces() []ConfiguredWorkspace {
+	return append([]ConfiguredWorkspace(nil), a.workspaces...)
+}
+
+func TestCUJ_H6_ConfiguredProjectSelectionStartsConversation(t *testing.T) {
+	root := t.TempDir()
+	apiDir := normalizeWorkspacePath(filepath.Join(root, "api"))
+	webDir := normalizeWorkspacePath(filepath.Join(root, "web"))
+	for _, dir := range []string{apiDir, webDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const agentName = "cuj-configured-project-agent"
+	RegisterAgent(agentName, func(map[string]any) (Agent, error) {
+		return &cujConfiguredWorkspaceAgent{cujAgent: &cujAgent{}, name: agentName}, nil
+	})
+	parent := &cujConfiguredWorkspaceAgent{
+		cujAgent: &cujAgent{},
+		name:     agentName,
+		workspaces: []ConfiguredWorkspace{
+			{Name: "API", Path: apiDir},
+			{Name: "Web", Path: webDir},
+		},
+	}
+	platform := &stubCardPlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}
+	engine := NewEngine("test", parent, []Platform{platform}, filepath.Join(t.TempDir(), "sessions.json"), LangEnglish)
+	engine.SetMultiWorkspace(root, filepath.Join(t.TempDir(), "bindings.json"))
+	t.Cleanup(func() { _ = engine.Stop() })
+
+	const sessionKey = "feishu:oc_project_picker:user"
+	send := func(content string) {
+		engine.ReceiveMessage(platform, &Message{
+			SessionKey: sessionKey,
+			Platform:   "feishu",
+			MessageID:  "msg-" + strings.ReplaceAll(content, " ", "-"),
+			UserID:     "user",
+			UserName:   "user",
+			Content:    content,
+			ReplyCtx:   "ctx",
+		})
+	}
+	lastReply := func() string {
+		sent := platform.getSent()
+		if len(sent) == 0 {
+			t.Fatal("expected a user-visible reply")
+		}
+		return sent[len(sent)-1]
+	}
+
+	// User action 1: send the first message and receive the project picker.
+	send("start a new task")
+	if len(platform.repliedCards) != 1 {
+		t.Fatalf("project picker cards = %d, want 1", len(platform.repliedCards))
+	}
+	picker := platform.repliedCards[0].RenderText()
+	for _, want := range []string{"API", "Web"} {
+		if !strings.Contains(picker, want) {
+			t.Fatalf("project picker missing %q:\n%s", want, picker)
+		}
+	}
+	for _, unwanted := range []string{apiDir, webDir} {
+		if strings.Contains(picker, unwanted) {
+			t.Fatalf("project picker should not repeat path %q:\n%s", unwanted, picker)
+		}
+	}
+
+	// User action 2: choose Web from the card. Feishu dispatches the select
+	// value as a command, so drive the same ReceiveMessage entrypoint.
+	send("/workspace select 2")
+	if got := lastReply(); !strings.Contains(got, webDir) {
+		t.Fatalf("selection reply = %q, want %q", got, webDir)
+	}
+
+	// User action 3: send the task again. It must start a workspace-specific
+	// agent and produce a normal reply without asking for the path again.
+	before := len(platform.getSent())
+	send("implement the API")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, reply := range platform.getSent()[before:] {
+			if strings.Contains(reply, "ok") {
+				if workspace := engine.workspacePool.Get(webDir); workspace == nil || workspace.agent == nil {
+					t.Fatalf("no workspace agent was created for %s", webDir)
+				}
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("task did not reach the selected workspace agent; replies: %v", platform.getSent()[before:])
+}
+
 // Opening, changing, and reopening reasoning controls must stay in the
 // workspace selected by the platform session, including card callbacks.
 func TestCUJ_R1_ReasoningCardsPreserveWorkspaceIsolation(t *testing.T) {

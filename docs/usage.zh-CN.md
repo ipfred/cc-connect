@@ -917,6 +917,7 @@ type = "claudecode"
 ```
 /workspace                    查看当前绑定
 /workspace bind <名称>        绑定本地文件夹
+/workspace select <序号>      选择 Agent 配置中的项目路径
 /workspace init <git-url>     克隆仓库并绑定
 /workspace unbind             解除绑定
 /workspace list               列出所有绑定

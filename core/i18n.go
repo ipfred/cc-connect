@@ -664,6 +664,11 @@ const (
 	MsgWsBindNotFound           MsgKey = "ws_bind_not_found"
 	MsgWsRouteUsage             MsgKey = "ws_route_usage"
 	MsgWsRouteSuccess           MsgKey = "ws_route_success"
+	MsgWsSelectTitle            MsgKey = "ws_select_title"
+	MsgWsSelectHint             MsgKey = "ws_select_hint"
+	MsgWsSelectPlaceholder      MsgKey = "ws_select_placeholder"
+	MsgWsSelectInvalid          MsgKey = "ws_select_invalid"
+	MsgWsChannelKeyMissing      MsgKey = "ws_channel_key_missing"
 	MsgWsRouteAbsoluteRequired  MsgKey = "ws_route_absolute_required"
 	MsgWsRouteNotFound          MsgKey = "ws_route_not_found"
 	MsgWsRouteNotDirectory      MsgKey = "ws_route_not_directory"
@@ -4099,11 +4104,11 @@ var messages = map[MsgKey]map[Language]string{
 		LangSpanish:            "Workspace: `%s`\nVinculado: %s\nOrigen: shared",
 	},
 	MsgWsUsage: {
-		LangEnglish:            "Usage: `/workspace [bind <name> | route <absolute-path> | init <url> | unbind | list | shared ...]`",
-		LangChinese:            "用法: `/workspace [bind <名称> | route <绝对路径> | init <仓库地址> | unbind | list | shared ...]`",
-		LangTraditionalChinese: "用法: `/workspace [bind <名稱> | route <絕對路徑> | init <倉庫地址> | unbind | list | shared ...]`",
-		LangJapanese:           "使い方: `/workspace [bind <名前> | route <絶対パス> | init <url> | unbind | list | shared ...]`",
-		LangSpanish:            "Uso: `/workspace [bind <nombre> | route <ruta-absoluta> | init <url> | unbind | list | shared ...]`",
+		LangEnglish:            "Usage: `/workspace [bind <name> | route <absolute-path> | select <number> | init <url> | unbind | list | shared ...]`",
+		LangChinese:            "用法: `/workspace [bind <名称> | route <绝对路径> | select <序号> | init <仓库地址> | unbind | list | shared ...]`",
+		LangTraditionalChinese: "用法: `/workspace [bind <名稱> | route <絕對路徑> | select <序號> | init <倉庫地址> | unbind | list | shared ...]`",
+		LangJapanese:           "使い方: `/workspace [bind <名前> | route <絶対パス> | select <番号> | init <url> | unbind | list | shared ...]`",
+		LangSpanish:            "Uso: `/workspace [bind <nombre> | route <ruta-absoluta> | select <número> | init <url> | unbind | list | shared ...]`",
 	},
 	MsgWsInitUsage: {
 		LangEnglish:            "Usage: `/workspace init <git-url or directory-path>`",
@@ -4146,6 +4151,41 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "✅ 工作區路由成功: `%s`",
 		LangJapanese:           "✅ ワークスペースをルーティングしました: `%s`",
 		LangSpanish:            "✅ Workspace enrutado: `%s`",
+	},
+	MsgWsSelectTitle: {
+		LangEnglish:            "Select a project",
+		LangChinese:            "选择项目",
+		LangTraditionalChinese: "選擇專案",
+		LangJapanese:           "プロジェクトを選択",
+		LangSpanish:            "Seleccionar un proyecto",
+	},
+	MsgWsSelectHint: {
+		LangEnglish:            "Choose where the agent should start this conversation. After selecting, send your message again.",
+		LangChinese:            "请选择本次对话使用的工作目录，选择后请重新发送消息。",
+		LangTraditionalChinese: "請選擇本次對話使用的工作目錄，選擇後請重新傳送訊息。",
+		LangJapanese:           "この会話で使用する作業ディレクトリを選択してください。選択後にメッセージをもう一度送信してください。",
+		LangSpanish:            "Elige el directorio de trabajo para esta conversación. Después de seleccionar, vuelve a enviar tu mensaje.",
+	},
+	MsgWsSelectPlaceholder: {
+		LangEnglish:            "Choose a project path",
+		LangChinese:            "选择项目路径",
+		LangTraditionalChinese: "選擇專案路徑",
+		LangJapanese:           "プロジェクトパスを選択",
+		LangSpanish:            "Elige una ruta de proyecto",
+	},
+	MsgWsSelectInvalid: {
+		LangEnglish:            "Invalid project selection. Choose a number from the project list.",
+		LangChinese:            "项目选择无效，请选择项目列表中的序号。",
+		LangTraditionalChinese: "專案選擇無效，請選擇專案列表中的序號。",
+		LangJapanese:           "プロジェクトの選択が無効です。プロジェクト一覧の番号を選んでください。",
+		LangSpanish:            "Selección de proyecto no válida. Elige un número de la lista de proyectos.",
+	},
+	MsgWsChannelKeyMissing: {
+		LangEnglish:            "Cannot bind a project because this message is not associated with a chat.",
+		LangChinese:            "无法绑定项目：当前消息没有关联的聊天。",
+		LangTraditionalChinese: "無法綁定專案：目前訊息沒有關聯的聊天。",
+		LangJapanese:           "このメッセージがチャットに関連付けられていないため、プロジェクトをバインドできません。",
+		LangSpanish:            "No se puede vincular el proyecto porque este mensaje no está asociado con un chat.",
 	},
 	MsgWsRouteAbsoluteRequired: {
 		LangEnglish:            "Workspace route must use an absolute path: `%s`",

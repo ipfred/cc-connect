@@ -36,6 +36,10 @@ type = "droid"
 [projects.agent.options]
 work_dir = "<Droid 工作的目录，例如 D:\\code\\myproject>"
 mode = "auto-low"           # 默认自动化等级，见下文 /mode
+# project_paths = [
+#   { name = "后端", path = "D:\\code\\backend" },
+#   { name = "前端", path = "~/code/frontend" },
+# ]
 # model = "claude-sonnet-5-5"   # 可选：默认模型，也可以在飞书里用 /model 切换
 # cmd = "C:\\Users\\me\\AppData\\Roaming\\npm\\droid.cmd"   # droid 不在 PATH 里时，填完整路径
 
@@ -50,6 +54,23 @@ progress_style = "compact"      # 工具进度合并成一条消息，原地更�
 ```
 
 注意：Windows 路径在 TOML 双引号里要写成 `\\`，或者改用单引号：`work_dir = 'D:\code\myproject'`。
+
+配置 `project_paths` 后，cc-connect 会自动启用按工作区隔离的 Droid 实例，并在当前聊天首次开始对话时发送飞书项目选择卡片。选择结果会绑定到当前聊天；开启飞书的 `thread_isolation = true` 时，每个话题可以单独选择项目。后续也可以随时发送 `/workspace select <序号>` 重新选择。
+
+`project_paths` 支持两种写法：
+
+```toml
+# 只用路径：卡片名称取目录名
+project_paths = ["/Users/me/code/backend", "~/code/frontend"]
+
+# 带自定义名称，便于在飞书下拉卡片里识别
+project_paths = [
+  { name = "后端 API", path = "/Users/me/code/backend" },
+  { name = "前端 Web", path = "~/code/frontend" },
+]
+```
+
+路径可以是绝对路径、`~/...`，或相对于 `work_dir` 的路径。启用 `project_paths` 后不需要另外设置 `mode = "multi-workspace"`；该配置已经会自动开启多工作区模式。
 
 ## 三、启动
 
@@ -91,6 +112,9 @@ macOS / Linux：
 | `/current` | 查看当前会话 |
 | `/history [n]` | 查看最近 n 条消息（默认 10 条） |
 | `/stop` | 停止 Droid 当前正在执行的任务 |
+| `/workspace` | 查看当前项目路径 |
+| `/workspace select` | 重新打开项目选择 |
+| `/workspace select <序号>` | 切换到 `project_paths` 中的项目 |
 
 ### 模型和自动化等级
 
@@ -140,4 +164,5 @@ macOS / Linux：
 - **报错 `Model version ... is deactivated`**：这是 Factory 那边托管模型的服务暂时不可用，不是 cc-connect 的问题。稍后重试，或用 `/model` 换一个模型。
 - **`/model` 列表是空的**：先发一条普通消息，让会话启动起来，再发 `/model`。
 - **每次对话占用的 token 较多**：Droid 会把工作目录里的 `AGENTS.md`、`CLAUDE.md` 和已安装的技能列表一起发给模型。日常聊天建议把 `work_dir` 指向一个空目录，写代码时再用项目目录。
+- **首次对话只收到项目选择卡片**：在卡片下拉框中选择项目，或发送 `/workspace select <序号>`，然后重新发送刚才的任务即可。
 - **找不到 droid 命令**：在 `[projects.agent.options]` 里用 `cmd` 填 droid 的完整路径。

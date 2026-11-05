@@ -396,8 +396,10 @@ func main() {
 		}
 
 		workDir, _ := proj.Agent.Options["work_dir"].(string)
+		configuredWorkspaces := configuredWorkspacesForAgent(agent)
+		multiWorkspaceEnabled := proj.Mode == "multi-workspace" || len(configuredWorkspaces) > 0
 		projectState := core.NewProjectStateStore(projectStatePath(cfg.DataDir, proj.Name))
-		effectiveWorkDir := applyProjectStateOverrideForMode(proj.Name, agent, workDir, projectState, proj.Mode == "multi-workspace")
+		effectiveWorkDir := applyProjectStateOverrideForMode(proj.Name, agent, workDir, projectState, multiWorkspaceEnabled)
 		startInitialRefreshIfReady(agent, providerWiring)
 		sessionFile := sessionStorePath(cfg.DataDir, proj.Name, effectiveWorkDir)
 
@@ -435,12 +437,16 @@ func main() {
 		engine.SetProjectStateStore(projectState)
 		engine.SetDataDir(cfg.DataDir)
 
-		// Wire multi-workspace mode
-		if proj.Mode == "multi-workspace" {
+		// Wire multi-workspace mode. Agents that expose configured project
+		// paths opt into the same per-workspace isolation automatically.
+		if multiWorkspaceEnabled {
 			baseDir := proj.BaseDir
 			if strings.HasPrefix(baseDir, "~/") {
 				home, _ := os.UserHomeDir()
 				baseDir = filepath.Join(home, baseDir[2:])
+			}
+			if baseDir == "" && len(configuredWorkspaces) > 0 {
+				baseDir = filepath.Dir(configuredWorkspaces[0].Path)
 			}
 			if err := os.MkdirAll(baseDir, 0o755); err != nil {
 				slog.Error("failed to create base_dir", "path", baseDir, "err", err)
@@ -468,7 +474,10 @@ func main() {
 			if proj.SkipGit != nil {
 				engine.SetSkipGit(*proj.SkipGit)
 			}
-			slog.Info("multi-workspace mode enabled", "project", proj.Name, "base_dir", baseDir)
+			slog.Info("multi-workspace mode enabled",
+				"project", proj.Name,
+				"base_dir", baseDir,
+				"configured_projects", len(configuredWorkspaces))
 		}
 
 		// Wire terminal observation (--observe / [projects.observe])
@@ -2002,6 +2011,14 @@ func buildAgentOptions(dataDir string, proj config.ProjectConfig) map[string]any
 	opts["cc_data_dir"] = dataDir
 	opts["cc_project"] = proj.Name
 	return opts
+}
+
+func configuredWorkspacesForAgent(agent core.Agent) []core.ConfiguredWorkspace {
+	provider, ok := agent.(core.ConfiguredWorkspaceProvider)
+	if !ok {
+		return nil
+	}
+	return provider.ConfiguredWorkspaces()
 }
 
 func wireAgentProviders(agent core.Agent, agentCfg config.AgentConfig) providerWiringResult {

@@ -852,6 +852,122 @@ func (e *Engine) SetWorkspaceInitAllowLocalPaths(allow bool) {
 	e.workspaceInitAllowLocalPaths = allow
 }
 
+// configuredWorkspaceChoices returns the project directories exposed by the
+// current agent. Entries are normalized and deduplicated so card indexes stay
+// stable even if a provider returns equivalent paths.
+func (e *Engine) configuredWorkspaceChoices() []ConfiguredWorkspace {
+	provider, ok := e.agent.(ConfiguredWorkspaceProvider)
+	if !ok {
+		return nil
+	}
+	raw := provider.ConfiguredWorkspaces()
+	out := make([]ConfiguredWorkspace, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, choice := range raw {
+		path := strings.TrimSpace(choice.Path)
+		if path == "" {
+			continue
+		}
+		path = normalizeWorkspacePath(path)
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		name := strings.TrimSpace(choice.Name)
+		if name == "" {
+			name = filepath.Base(path)
+		}
+		out = append(out, ConfiguredWorkspace{Name: name, Path: path})
+	}
+	return out
+}
+
+func (e *Engine) configuredWorkspaceSelectionNeeded(p Platform, msg *Message) bool {
+	if !e.multiWorkspace || e.workspaceBindings == nil || len(e.configuredWorkspaceChoices()) == 0 {
+		return false
+	}
+	channelID := effectiveChannelID(msg)
+	if channelID == "" {
+		return false
+	}
+	workspace, _, err := e.resolveWorkspace(p, channelID)
+	return err == nil && workspace == ""
+}
+
+// sendConfiguredWorkspaceSelection presents agent-configured project paths.
+// Card platforms get a dropdown; text-only platforms get numbered commands.
+func (e *Engine) sendConfiguredWorkspaceSelection(p Platform, msg *Message) bool {
+	choices := e.configuredWorkspaceChoices()
+	if len(choices) == 0 {
+		return false
+	}
+	if supportsCards(p) {
+		e.replyWithCard(p, msg.ReplyCtx, e.renderWorkspaceSelectionCard(choices))
+		return true
+	}
+
+	var sb strings.Builder
+	sb.WriteString("**")
+	sb.WriteString(e.i18n.T(MsgWsSelectTitle))
+	sb.WriteString("**\n\n")
+	sb.WriteString(e.i18n.T(MsgWsSelectHint))
+	sb.WriteString("\n")
+	for i, choice := range choices {
+		fmt.Fprintf(&sb, "\n**%d. %s**\n`%s`\n`/workspace select %d`\n", i+1, choice.Name, choice.Path, i+1)
+	}
+	e.reply(p, msg.ReplyCtx, sb.String())
+	return true
+}
+
+func (e *Engine) renderWorkspaceSelectionCard(choices []ConfiguredWorkspace) *Card {
+	options := make([]CardSelectOption, 0, len(choices))
+	for i, choice := range choices {
+		options = append(options, CardSelectOption{
+			Text:  choice.Name,
+			Value: fmt.Sprintf("cmd:/workspace select %d", i+1),
+		})
+	}
+	return NewCard().
+		Select(e.i18n.T(MsgWsSelectPlaceholder), options, "").
+		Build()
+}
+
+func (e *Engine) configuredWorkspaceByIndex(value string) (ConfiguredWorkspace, error) {
+	choices := e.configuredWorkspaceChoices()
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n < 1 || n > len(choices) {
+		return ConfiguredWorkspace{}, errors.New(e.i18n.T(MsgWsSelectInvalid))
+	}
+	return choices[n-1], nil
+}
+
+func (e *Engine) bindConfiguredWorkspace(p Platform, msg *Message, choice ConfiguredWorkspace) error {
+	info, err := os.Stat(choice.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf(e.i18n.T(MsgWsRouteNotFound), choice.Path)
+		}
+		return fmt.Errorf(e.i18n.T(MsgWsResolutionError), err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf(e.i18n.T(MsgWsRouteNotDirectory), choice.Path)
+	}
+
+	channelKey := e.effectiveWorkspaceChannelKey(msg)
+	if channelKey == "" {
+		return errors.New(e.i18n.T(MsgWsChannelKeyMissing))
+	}
+	channelName := ""
+	if resolver, ok := p.(ChannelNameResolver); ok {
+		channelName, _ = resolver.ResolveChannelName(effectiveChannelID(msg))
+	}
+	e.workspaceBindings.Bind("project:"+e.name, channelKey, channelName, normalizeWorkspacePath(choice.Path))
+	e.initFlowsMu.Lock()
+	delete(e.initFlows, channelKey)
+	e.initFlowsMu.Unlock()
+	return nil
+}
+
 func (e *Engine) runIdleReaper() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
@@ -3099,6 +3215,9 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 		if workspace == "" {
 			// No workspace — handle init flow (unless it's a /workspace command)
 			if !strings.HasPrefix(content, "/workspace") && !strings.HasPrefix(content, "/ws ") {
+				if e.sendConfiguredWorkspaceSelection(p, msg) {
+					return
+				}
 				if e.handleWorkspaceInitFlow(p, msg, channelName) {
 					return
 				}
@@ -7529,13 +7648,16 @@ func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string)
 
 	subCmd := ""
 	if len(args) > 0 {
-		subCmd = matchSubCommand(args[0], []string{"init", "bind", "route", "unbind", "list", "shared"})
+		subCmd = matchSubCommand(args[0], []string{"init", "bind", "route", "select", "unbind", "list", "shared"})
 	}
 
 	switch subCmd {
 	case "":
 		b, bindingKey, usable := e.lookupEffectiveWorkspaceBinding(channelKey)
 		if !usable {
+			if e.sendConfiguredWorkspaceSelection(p, msg) {
+				return
+			}
 			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsNoBinding))
 		} else {
 			replyWorkspaceInfo(b, bindingKey)
@@ -7554,6 +7676,24 @@ func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string)
 			return
 		}
 		routeWorkspace(projectKey, args[1:], MsgWsRouteUsage, MsgWsRouteSuccess)
+
+	case "select":
+		if len(args) < 2 {
+			if !e.sendConfiguredWorkspaceSelection(p, msg) {
+				e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsUsage))
+			}
+			return
+		}
+		choice, err := e.configuredWorkspaceByIndex(args[1])
+		if err != nil {
+			e.reply(p, msg.ReplyCtx, err.Error())
+			return
+		}
+		if err := e.bindConfiguredWorkspace(p, msg, choice); err != nil {
+			e.reply(p, msg.ReplyCtx, err.Error())
+			return
+		}
+		e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsBindSuccess, choice.Path))
 
 	case "init":
 		if len(args) < 2 {
@@ -7634,6 +7774,11 @@ func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string)
 }
 
 func (e *Engine) cmdNew(p Platform, msg *Message, args []string) {
+	if e.configuredWorkspaceSelectionNeeded(p, msg) {
+		e.sendConfiguredWorkspaceSelection(p, msg)
+		return
+	}
+
 	_, sessions, interactiveKey, err := e.commandContext(p, msg)
 	if err != nil {
 		e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsResolutionError, err))
@@ -10091,6 +10236,11 @@ func (e *Engine) cmdHelp(p Platform, msg *Message) {
 // behavior consistent with every other Telegram bot framework, and is a
 // no-op improvement on platforms where /start has no special meaning.
 func (e *Engine) cmdStart(p Platform, msg *Message) {
+	if e.configuredWorkspaceSelectionNeeded(p, msg) {
+		e.sendConfiguredWorkspaceSelection(p, msg)
+		return
+	}
+
 	name := e.name
 	if name == "" {
 		name = e.agent.Name()
@@ -17543,6 +17693,13 @@ func (e *Engine) resolveWorkspace(p Platform, channelID string) (string, string,
 
 	if channelName == "" {
 		return "", "", nil
+	}
+
+	// Agents with an explicit project_paths catalog must not auto-bind an
+	// unrelated sibling under base_dir. The user chooses from that catalog
+	// (or uses an explicit /workspace bind/route/init command) instead.
+	if len(e.configuredWorkspaceChoices()) > 0 {
+		return "", channelName, nil
 	}
 
 	// Step 3: Convention match — check if base_dir/<channel-name> exists
